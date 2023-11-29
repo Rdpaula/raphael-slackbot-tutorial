@@ -36,9 +36,54 @@ def command():
 
   try:
     response = slack_client.chat_postMessage(
-      channel='#creating-bots'.format(info["channel_name"]), 
-      text=commander.getMessage()
-    )#.get()
+      channel=info["channel_id"].format(info["channel_name"]),
+      blocks=[
+		{
+			"type": "header",
+			"text": {
+				"type": "plain_text",
+				"text": "Clock-bot",
+				"emoji": True
+			}
+		},
+		{
+			"type": "section",
+			"fields": [
+				{
+					"type": "mrkdwn",
+					"text": "*When:*\nAug 10 - Aug 13"
+				}
+			]
+		},
+		{
+			"type": "actions",
+			"elements": [
+				{
+					"type": "button",
+					"text": {
+						"type": "plain_text",
+						"emoji": True,
+						"text": "Start"
+					},
+					"style": "primary",
+					"value": "Start",
+          "action_id": "Start"
+				},
+				{
+					"type": "button",
+					"text": {
+						"type": "plain_text",
+						"emoji": True,
+						"text": "Stop"
+					},
+					"style": "danger",
+					"value": "click_me_123",
+          "action_id": "Stop"
+				}
+			]
+		}
+	]
+    ).get()
   except SlackApiError as e:
     logging.error('Request to Slack API Failed: {}.'.format(e.response.status_code))
     logging.error(e.response)
@@ -46,54 +91,35 @@ def command():
 
   return make_response("", response.status_code)
 
-@app.route("/slack/start", methods=["POST"])
-def start():
-  if not verifier.is_valid_request(request.get_data(), request.headers):
-    return make_response("invalid request", 403)
-  info = request.form
+@app.route('/slack/events', methods=['POST'])
+def handle_event():
 
-  try:
-    global before
-    before = dt.now()
-    print(before.strftime("%d/%m/%Y %H:%M:%S"))
-
-    response = slack_client.chat_postMessage(
-      channel='#creating-bots'.format(info["channel_name"]), 
-      text="starting clock"
-    )#.get()
-
-  except SlackApiError as e:
-    logging.error('Request to Slack API Failed: {}.'.format(e.response.status_code))
-    logging.error(e.response)
-    return make_response("", e.response.status_code)
-
-  return make_response("", response.status_code)
-
-@app.route("/slack/stop", methods=["POST"])
-def stop():
-  if not verifier.is_valid_request(request.get_data(), request.headers):
-    return make_response("invalid request", 403)
-  info = request.form
-
-  try:
-    global before
-    
-    duration = dt.now() - before
-    duration = duration.total_seconds()
-    hours, remainder = divmod(duration, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    response = slack_client.chat_postMessage(
-      channel='#creating-bots'.format(info["channel_name"]), 
-      text='{:02}:{:02}:{:02}'.format(int(hours), int(minutes), int(seconds))
-    )#.get()
-    
-    
-  except SlackApiError as e:
-    logging.error('Request to Slack API Failed: {}.'.format(e.response.status_code))
-    logging.error(e.response)
-    return make_response("", e.response.status_code)
-
-  return make_response("", response.status_code)
+    payload = json.loads(request.form.get('payload'))
+    print(payload)
+    if payload['type'] == 'block_actions':
+        action = payload['actions'][0]['action_id']
+        response_url = payload['response_url']  # Use this URL to send additional messages
+        
+        global before
+        if action == 'Start':
+            before = dt.now()
+            print(before.strftime("%d/%m/%Y %H:%M:%S"))
+        elif action == 'Stop':
+            # Delete the original message using response_url
+            
+            try:
+              duration = dt.now() - before
+              duration = duration.total_seconds()
+              hours, remainder = divmod(duration, 3600)
+              minutes, seconds = divmod(remainder, 60)
+              response = slack_client.chat_update(
+              channel=payload['channel']['id'].format(payload["channel"]["id"]), text='{:02}:{:02}:{:02}'.format(int(hours), int(minutes), int(seconds)), ts=payload["message"]["ts"])#.get()
+            except SlackApiError as e:
+              logging.error('Request to Slack API Failed: {}.'.format(e.response.status_code))
+              logging.error(e.response)
+              return make_response("", e.response.status_code)
+    # Send acknowledgment response
+    return '', 200
 
 # Start the Flask server
 if __name__ == "__main__":
